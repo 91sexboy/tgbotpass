@@ -95,7 +95,7 @@ def main():
         application.post_init = post_init
         
         # 6. 注册全局视频消息处理器（支持动态规则变更，无需重启）
-        video_filter = filters.VIDEO | filters.VIDEO_NOTE | filters.DOCUMENT
+        video_filter = filters.VIDEO | filters.VIDEO_NOTE | filters.Document.ALL
         application.add_handler(
             MessageHandler(video_filter, handler.handle_video)
         )
