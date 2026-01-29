@@ -48,7 +48,7 @@ async def cleanup_job(context):
 async def post_init(application: Application):
     """机器人启动后的初始化工作"""
     logger.info("=" * 60)
-    logger.info("🤖 Telegram 视频转发机器人已启动 (v2.2.0)")
+    logger.info("🤖 Telegram 视频转发机器人已启动 (v2.2.1)")
     logger.info("=" * 60)
     
     # 获取 handler 实例
