@@ -5,3 +5,6 @@ __pycache__/
 *.pyc
 venv/
 .vscode/
+config/config.json
+data/*.db
+data/*.db-journal

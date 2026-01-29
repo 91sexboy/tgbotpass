@@ -7,7 +7,7 @@ Type=simple
 User=root
 WorkingDirectory=/root/tgbotpass
 Environment="PATH=/usr/bin:/usr/local/bin"
-ExecStart=/usr/bin/python3 /root/tgbotpass/bot.py
+ExecStart=/usr/bin/python3 /root/tgbotpass/src/main.py
 
 # 自动重启配置
 Restart=always
