@@ -91,7 +91,8 @@ def main():
         # 7. 注册视频消息处理器
         for source_chat_id in source_chat_ids:
             source_filter = filters.Chat(chat_id=source_chat_id)
-            video_filter = filters.VIDEO | filters.VideoNote.ALL
+            # 监听普通视频、视频笔记、以及以文件形式发送的视频
+            video_filter = filters.VIDEO | filters.VideoNote.ALL | filters.Document.VIDEO
             
             application.add_handler(
                 MessageHandler(source_filter & video_filter, handler.handle_video)

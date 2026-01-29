@@ -35,7 +35,7 @@ class MessageHandler:
     
     async def handle_video(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
-        处理视频消息的核心函数
+        处理视频消息的核心函数（包括普通视频、视频笔记和视频文件）
         
         Args:
             update: Telegram 更新对象
@@ -43,14 +43,32 @@ class MessageHandler:
         """
         try:
             message = update.message
-            if not message or not message.video:
+            if not message:
                 return
             
             source_chat_id = message.chat_id
-            video = message.video
-            file_unique_id = video.file_unique_id
             
-            logger.info(f"收到视频 - Chat ID: {source_chat_id}, Message ID: {message.message_id}")
+            # 识别视频类型并获取 file_unique_id
+            file_unique_id = None
+            video_type = None
+            
+            if message.video:
+                # 普通视频
+                file_unique_id = message.video.file_unique_id
+                video_type = "video"
+            elif message.video_note:
+                # 视频笔记（圆圈视频）
+                file_unique_id = message.video_note.file_unique_id
+                video_type = "video_note"
+            elif message.document and message.document.mime_type and message.document.mime_type.startswith('video/'):
+                # 以文件形式发送的视频
+                file_unique_id = message.document.file_unique_id
+                video_type = "video_file"
+            else:
+                # 不是视频相关的消息，忽略
+                return
+            
+            logger.info(f"收到{video_type} - Chat ID: {source_chat_id}, Message ID: {message.message_id}")
             
             # 获取匹配的转发规则
             rules = self.config.get_targets_for_source(source_chat_id)
