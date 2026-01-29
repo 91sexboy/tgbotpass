@@ -1,0 +1,22 @@
+[Unit]
+Description=Telegram Video Forwarder Bot
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/tgbotpass
+Environment="PATH=/usr/bin:/usr/local/bin"
+ExecStart=/usr/bin/python3 /root/tgbotpass/bot.py
+
+# 自动重启配置
+Restart=always
+RestartSec=10
+
+# 日志配置
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tg-video-bot
+
+[Install]
+WantedBy=multi-user.target

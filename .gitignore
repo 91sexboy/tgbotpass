@@ -1,0 +1,7 @@
+# 请将此文件添加到 .gitignore
+.env
+bot.log
+__pycache__/
+*.pyc
+venv/
+.vscode/
