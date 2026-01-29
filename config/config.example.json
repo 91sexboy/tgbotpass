@@ -6,7 +6,7 @@
     {
       "source_chat_id": -1001234567890,
       "target_chat_ids": [-1009876543210],
-      "keywords_blacklist": ["广告", "博彩", "spam"],
+      "keywords_blacklist": [],
       "enabled": true
     }
   ],

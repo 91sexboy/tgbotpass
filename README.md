@@ -105,7 +105,7 @@ nano config/config.json
     {
       "source_chat_id": -1001234567890,
       "target_chat_ids": [-1009876543210],
-      "keywords_blacklist": ["广告", "博彩", "spam"],
+      "keywords_blacklist": [],
       "enabled": true
     }
   ],
@@ -313,9 +313,9 @@ scp -r src/ config/ requirements.txt video_bot.service root@YOUR_SERVER_IP:/root
 然后发送 `/reload` 指令给机器人，或重启服务。
 
 ### Q8: 关键词过滤如何使用？
-**黑名单模式**（默认）:
+**黑名单模式**（可选）:
 ```json
-"keywords_blacklist": ["广告", "博彩", "spam"]
+"keywords_blacklist": ["关键词1", "关键词2"]
 ```
 任何包含这些词的视频都不会被转发。
 
@@ -325,7 +325,9 @@ scp -r src/ config/ requirements.txt video_bot.service root@YOUR_SERVER_IP:/root
 ```
 如果配置了白名单，只有包含白名单关键词的视频才会被转发。
 
-**注意**: 黑名单和白名单可以同时使用，必须同时满足两个条件才会转发。
+**注意**: 
+- 默认情况下两个列表都为空，机器人会转发所有视频
+- 黑名单和白名单可以同时使用，必须同时满足两个条件才会转发
 
 ---
 
