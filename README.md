@@ -39,27 +39,31 @@
 
 ## Debian 服务器部署步骤
 
-### 第一步: 上传文件到服务器
+### 方式一: Git Clone 部署（推荐）
 
-```bash
-# 1. 在服务器上创建目录
-mkdir -p /root/tgbotpass
-cd /root/tgbotpass
+这是最简单、最方便后续更新的方式。
 
-# 2. 使用 scp 上传文件（在本地电脑执行）
-scp bot.py requirements.txt .env.example video_bot.service root@YOUR_SERVER_IP:/root/tgbotpass/
-```
-
-或者使用 FTP 工具（如 WinSCP）上传这些文件。
-
-### 第二步: 安装依赖
+#### 第一步: 克隆仓库到服务器
 
 ```bash
 # SSH 登录到服务器后执行
-cd /root/tgbotpass
 
-# 安装 Python3 和 pip（如果尚未安装）
+# 1. 安装 Git（如果尚未安装）
 apt update
+apt install git -y
+
+# 2. 克隆仓库
+cd /root
+git clone https://github.com/YOUR_USERNAME/telegram-video-bot.git tgbotpass
+cd tgbotpass
+```
+
+**注意**: 请将 `YOUR_USERNAME/telegram-video-bot` 替换为您的实际 GitHub 仓库地址。
+
+#### 第二步: 安装依赖
+
+```bash
+# 安装 Python3 和 pip（如果尚未安装）
 apt install python3 python3-pip python3-venv -y
 
 # 创建虚拟环境（推荐）
@@ -70,7 +74,7 @@ source venv/bin/activate
 pip3 install -r requirements.txt
 ```
 
-### 第三步: 配置机器人
+#### 第三步: 配置机器人
 
 ```bash
 # 复制配置模板
@@ -89,7 +93,7 @@ TARGET_CHAT_ID=-1009876543210
 
 按 `Ctrl+O` 保存，`Ctrl+X` 退出。
 
-### 第四步: 测试运行
+#### 第四步: 测试运行
 
 ```bash
 # 手动启动测试（查看是否有错误）
@@ -109,7 +113,7 @@ python3 bot.py
 
 按 `Ctrl+C` 停止，准备配置为系统服务。
 
-### 第五步: 配置 systemd 服务
+#### 第五步: 配置 systemd 服务
 
 ```bash
 # 1. 编辑服务文件，修改路径（如果使用虚拟环境）
@@ -142,7 +146,7 @@ systemctl enable video_bot
 systemctl status video_bot
 ```
 
-### 第六步: 管理服务
+#### 第六步: 管理服务
 
 ```bash
 # 查看实时日志
@@ -157,6 +161,39 @@ systemctl stop video_bot
 # 查看详细日志（最近 50 行）
 journalctl -u video_bot -n 50
 ```
+
+#### 后续更新代码
+
+当 GitHub 仓库有更新时，只需在服务器执行：
+
+```bash
+cd /root/tgbotpass
+git pull
+systemctl restart video_bot
+```
+
+---
+
+### 方式二: SCP/FTP 上传部署（传统方式）
+
+如果您不想使用 Git 或没有 GitHub 账号，可以使用传统的文件上传方式。
+
+#### 第一步: 上传文件到服务器
+
+```bash
+# 1. 在服务器上创建目录
+mkdir -p /root/tgbotpass
+cd /root/tgbotpass
+
+# 2. 使用 scp 上传文件（在本地电脑执行）
+scp bot.py requirements.txt .env.example video_bot.service root@YOUR_SERVER_IP:/root/tgbotpass/
+```
+
+或者使用 FTP 工具（如 WinSCP）上传这些文件。
+
+#### 第二步至第六步
+
+与"方式一"的第二步至第六步完全相同，请参考上方步骤。
 
 ---
 
