@@ -2,12 +2,14 @@
 # -*- coding: utf-8 -*-
 """
 Telegram 视频转发机器人 - 主程序
-支持多群组、智能去重、关键词过滤、管理员通知
+支持多群组、智能去重、关键词过滤、管理员通知、动态规则管理、历史迁移
 """
 
 import sys
 import logging
 import asyncio
+import datetime
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 # 添加项目根目录到 Python 路径
@@ -30,17 +32,23 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO,
     handlers=[
-        logging.FileHandler('bot.log', encoding='utf-8'),
+        RotatingFileHandler('bot.log', maxBytes=10 * 1024 * 1024, backupCount=5, encoding='utf-8'),
         logging.StreamHandler(sys.stdout)
     ]
 )
 logger = logging.getLogger(__name__)
 
 
+async def cleanup_job(context):
+    db = context.application.bot_data.get('database')
+    if db:
+        await db.cleanup_old_records(days=30)
+
+
 async def post_init(application: Application):
     """机器人启动后的初始化工作"""
     logger.info("=" * 60)
-    logger.info("🤖 Telegram 视频转发机器人已启动")
+    logger.info("🤖 Telegram 视频转发机器人已启动 (v2.2.0)")
     logger.info("=" * 60)
     
     # 获取 handler 实例
@@ -52,6 +60,13 @@ async def post_init(application: Application):
     db = application.bot_data.get('database')
     if db:
         await db.cleanup_old_records(days=30)
+
+    # 定时清理数据库（每天凌晨 4 点）
+    if application.job_queue:
+        application.job_queue.run_daily(
+            cleanup_job,
+            time=datetime.time(hour=4, minute=0, second=0)
+        )
 
 
 def main():
@@ -79,30 +94,23 @@ def main():
         # 5. 注册启动回调
         application.post_init = post_init
         
-        # 6. 收集所有需要监听的源群组
-        source_chat_ids = list(set([
-            rule["source_chat_id"] 
-            for rule in config.forwarding_rules 
-            if rule.get("enabled", True)
-        ]))
+        # 6. 注册全局视频消息处理器（支持动态规则变更，无需重启）
+        video_filter = filters.VIDEO | filters.VideoNote.ALL | filters.Document.VIDEO
+        application.add_handler(
+            MessageHandler(video_filter, handler.handle_video)
+        )
+        logger.info("✓ 已启用全局视频监听模式（支持动态规则）")
         
-        logger.info(f"监听源群组: {source_chat_ids}")
-        
-        # 7. 注册视频消息处理器
-        for source_chat_id in source_chat_ids:
-            source_filter = filters.Chat(chat_id=source_chat_id)
-            # 监听普通视频、视频笔记、以及以文件形式发送的视频
-            video_filter = filters.VIDEO | filters.VideoNote.ALL | filters.Document.VIDEO
-            
-            application.add_handler(
-                MessageHandler(source_filter & video_filter, handler.handle_video)
-            )
-        
-        # 8. 注册管理员指令
+        # 7. 注册管理员指令
         application.add_handler(CommandHandler("stats", handler.handle_command_stats))
         application.add_handler(CommandHandler("reload", handler.handle_command_reload))
+        application.add_handler(CommandHandler("add", handler.handle_command_add))
+        application.add_handler(CommandHandler("del", handler.handle_command_del))
+        application.add_handler(CommandHandler("list", handler.handle_command_list))
+        application.add_handler(CommandHandler("stop", handler.handle_command_stop))
+        application.add_handler(CommandHandler("migrate", handler.handle_command_migrate))
         
-        # 9. 异步初始化数据库
+        # 8. 异步初始化数据库
         async def init_database():
             await database.init_db()
         
@@ -110,7 +118,7 @@ def main():
         import asyncio
         asyncio.get_event_loop().run_until_complete(init_database())
         
-        # 10. 启动机器人
+        # 9. 启动机器人
         logger.info("正在启动机器人...")
         logger.info("=" * 60)
         

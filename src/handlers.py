@@ -9,7 +9,7 @@ import logging
 import asyncio
 from telegram import Update
 from telegram.ext import ContextTypes
-from telegram.error import RetryAfter, TelegramError
+from telegram.error import RetryAfter, TelegramError, BadRequest
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -32,6 +32,7 @@ class MessageHandler:
         """
         self.config = config
         self.db = database
+        self.is_migrating = False
     
     async def handle_video(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """
@@ -250,6 +251,253 @@ class MessageHandler:
         except Exception as e:
             logger.error(f"获取统计信息失败: {e}")
             await update.message.reply_text(f"❌ 获取统计信息失败: {e}")
+
+    def _is_admin(self, update: Update) -> bool:
+        user = update.effective_user
+        return bool(user and user.id == self.config.admin_user_id)
+
+    def _parse_int(self, value: str):
+        try:
+            return int(value)
+        except Exception:
+            return None
+
+    async def handle_command_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        处理 /list 命令 - 显示全部转发规则
+        """
+        if not self._is_admin(update):
+            return
+
+        rules = self.config.forwarding_rules
+        if not rules:
+            await update.message.reply_text("⚠ 当前没有配置任何转发规则")
+            return
+
+        lines = ["📋 当前转发规则:"]
+        for idx, rule in enumerate(rules, start=1):
+            source_id = rule.get("source_chat_id")
+            source_title = rule.get("source_chat_title") or str(source_id)
+            target_ids = rule.get("target_chat_ids", [])
+            target_titles = rule.get("target_chat_titles", {}) or {}
+
+            targets_display = []
+            for target_id in target_ids:
+                title = target_titles.get(str(target_id)) or str(target_id)
+                targets_display.append(f"{title} ({target_id})")
+
+            lines.append(f"{idx}. {source_title} ({source_id}) -> {', '.join(targets_display)}")
+
+        await update.message.reply_text("\n".join(lines))
+
+    async def handle_command_add(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        处理 /add 命令 - 动态添加转发规则
+        用法: /add <source_chat_id> <target_chat_id>
+        """
+        if not self._is_admin(update):
+            return
+
+        if not context.args or len(context.args) != 2:
+            await update.message.reply_text("用法: /add <源群组ID> <目标群组ID>")
+            return
+
+        source_id = self._parse_int(context.args[0])
+        target_id = self._parse_int(context.args[1])
+
+        if source_id is None or target_id is None:
+            await update.message.reply_text("❌ 参数必须是数字（群组ID）")
+            return
+
+        try:
+            source_chat = await context.bot.get_chat(source_id)
+            target_chat = await context.bot.get_chat(target_id)
+        except TelegramError as e:
+            await update.message.reply_text(
+                f"❌ 无法访问指定群组/频道，请确认机器人已加入并具有权限\n错误: {e}"
+            )
+            return
+
+        try:
+            source_title = getattr(source_chat, "title", None) or str(source_id)
+            target_title = getattr(target_chat, "title", None) or str(target_id)
+            self.config.add_rule(source_id, target_id, source_title, target_title)
+            await update.message.reply_text(
+                f"✓ 已添加/更新规则: {source_title} ({source_id}) -> {target_title} ({target_id})"
+            )
+        except Exception as e:
+            logger.error(f"添加规则失败: {e}")
+            await update.message.reply_text(f"❌ 添加规则失败: {e}")
+
+    async def handle_command_del(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        处理 /del 命令 - 删除源群组规则
+        用法: /del <source_chat_id>
+        """
+        if not self._is_admin(update):
+            return
+
+        if not context.args or len(context.args) != 1:
+            await update.message.reply_text("用法: /del <源群组ID>")
+            return
+
+        source_id = self._parse_int(context.args[0])
+        if source_id is None:
+            await update.message.reply_text("❌ 参数必须是数字（群组ID）")
+            return
+
+        try:
+            removed = self.config.remove_rule(source_id)
+            if removed:
+                await update.message.reply_text(f"✓ 已删除源群组 {source_id} 的转发规则")
+            else:
+                await update.message.reply_text(f"⚠ 未找到源群组 {source_id} 的规则")
+        except Exception as e:
+            logger.error(f"删除规则失败: {e}")
+            await update.message.reply_text(f"❌ 删除规则失败: {e}")
+
+    async def handle_command_stop(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        处理 /stop 命令 - 停止当前迁移任务
+        """
+        if not self._is_admin(update):
+            return
+
+        if self.is_migrating:
+            self.is_migrating = False
+            await update.message.reply_text("🛑 正在停止迁移任务...（当前消息处理完后生效）")
+        else:
+            await update.message.reply_text("⚠ 当前没有正在进行的迁移任务")
+
+    async def handle_command_migrate(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        处理 /migrate 命令 - 盲盒遍历频道历史视频
+        用法: /migrate <source_id> <target_id> <start_id> <end_id>
+        """
+        if not self._is_admin(update):
+            return
+
+        if self.is_migrating:
+            await update.message.reply_text("⚠ 已有迁移任务正在运行，请先 /stop 终止")
+            return
+
+        if not context.args or len(context.args) != 4:
+            await update.message.reply_text(
+                "用法: /migrate <源频道ID> <目标频道ID> <起始消息ID> <结束消息ID>"
+            )
+            return
+
+        source_id = self._parse_int(context.args[0])
+        target_id = self._parse_int(context.args[1])
+        start_id = self._parse_int(context.args[2])
+        end_id = self._parse_int(context.args[3])
+
+        if None in (source_id, target_id, start_id, end_id):
+            await update.message.reply_text("❌ 所有参数必须是数字")
+            return
+
+        if start_id <= 0 or end_id <= 0 or start_id > end_id:
+            await update.message.reply_text("❌ 起始/结束消息ID不合法")
+            return
+
+        admin_chat_id = self.config.admin_user_id
+        total = 0
+        forwarded = 0
+        skipped = 0
+        missing = 0
+
+        self.is_migrating = True
+
+        status_message = await update.message.reply_text(
+            f"🚀 开始迁移历史视频\n源: {source_id}\n目标: {target_id}\n范围: {start_id} -> {end_id}"
+        )
+
+        try:
+            for message_id in range(start_id, end_id + 1):
+                if not self.is_migrating:
+                    try:
+                        await status_message.edit_text("🛑 迁移任务已停止")
+                    except Exception:
+                        await update.message.reply_text("🛑 迁移任务已停止")
+                    break
+                total += 1
+
+            try:
+                forwarded_message = await context.bot.forward_message(
+                    chat_id=admin_chat_id,
+                    from_chat_id=source_id,
+                    message_id=message_id
+                )
+            except RetryAfter as e:
+                await asyncio.sleep(e.retry_after)
+                continue
+            except BadRequest as e:
+                if "message to forward not found" in str(e).lower():
+                    missing += 1
+                    continue
+                logger.error(f"转发失败: {e}")
+                skipped += 1
+                continue
+            except TelegramError as e:
+                logger.error(f"转发失败: {e}")
+                skipped += 1
+                continue
+
+            try:
+                file_unique_id = None
+                if forwarded_message.video:
+                    file_unique_id = forwarded_message.video.file_unique_id
+                elif forwarded_message.video_note:
+                    file_unique_id = forwarded_message.video_note.file_unique_id
+                elif forwarded_message.document and forwarded_message.document.mime_type and forwarded_message.document.mime_type.startswith('video/'):
+                    file_unique_id = forwarded_message.document.file_unique_id
+
+                if file_unique_id:
+                    if self.config.deduplication_enabled:
+                        if await self.db.is_duplicate(file_unique_id, self.config.deduplication_expire_hours):
+                            skipped += 1
+                        else:
+                            await context.bot.copy_message(
+                                chat_id=target_id,
+                                from_chat_id=source_id,
+                                message_id=message_id
+                            )
+                            await self.db.add_forwarded(file_unique_id, source_id, target_id)
+                            forwarded += 1
+                    else:
+                        await context.bot.copy_message(
+                            chat_id=target_id,
+                            from_chat_id=source_id,
+                            message_id=message_id
+                        )
+                        forwarded += 1
+                else:
+                    skipped += 1
+
+            except RetryAfter as e:
+                await asyncio.sleep(e.retry_after)
+            except TelegramError as e:
+                logger.error(f"迁移消息失败: {e}")
+                skipped += 1
+            finally:
+                try:
+                    await context.bot.delete_message(chat_id=admin_chat_id, message_id=forwarded_message.message_id)
+                except Exception:
+                    pass
+
+            if total % 50 == 0:
+                try:
+                    await status_message.edit_text(
+                        f"进度: {message_id}/{end_id} | 已转发: {forwarded} | 跳过: {skipped} | 丢失: {missing}"
+                    )
+                except Exception:
+                    await update.message.reply_text(
+                        f"进度: {message_id}/{end_id} | 已转发: {forwarded} | 跳过: {skipped} | 丢失: {missing}"
+                    )
+
+                await asyncio.sleep(0.4)
+        finally:
+            self.is_migrating = False
     
     async def handle_command_reload(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """

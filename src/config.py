@@ -7,6 +7,7 @@
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import List, Dict, Any
 
@@ -134,3 +135,102 @@ class Config:
         logger.info("正在重新加载配置...")
         self.load()
         logger.info("✓ 配置已重新加载")
+    
+    def save(self):
+        """保存配置到文件（原子写入，防止文件损坏）"""
+        temp_path = f"{self.config_path}.tmp"
+        try:
+            # 先写入临时文件
+            with open(temp_path, 'w', encoding='utf-8') as f:
+                json.dump(self.data, f, indent=2, ensure_ascii=False)
+            
+            # 原子替换（确保文件完整性）
+            os.replace(temp_path, self.config_path)
+            logger.info(f"✓ 配置已安全保存: {self.config_path}")
+        except Exception as e:
+            logger.error(f"保存配置失败: {e}")
+            # 清理临时文件
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except:
+                    pass
+            raise
+    
+    def add_rule(self, source_chat_id: int, target_chat_id: int, source_title: str = None, target_title: str = None):
+        """
+        添加或更新转发规则
+        
+        Args:
+            source_chat_id: 源群组 ID
+            target_chat_id: 目标群组 ID
+            source_title: 源群组名称（可选）
+            target_title: 目标群组名称（可选）
+        """
+        # 先从磁盘重新加载，防止覆盖手动编辑
+        self.load()
+        
+        # 检查是否已存在该源群组的规则
+        found = False
+        for rule in self.data.setdefault("forwarding_rules", []):
+            if rule["source_chat_id"] == source_chat_id:
+                # 更新源群组标题
+                if source_title:
+                    rule["source_chat_title"] = source_title
+
+                if target_chat_id not in rule["target_chat_ids"]:
+                    rule["target_chat_ids"].append(target_chat_id)
+                    logger.info(f"已将目标 {target_chat_id} 添加到源 {source_chat_id} 的规则中")
+                else:
+                    logger.info(f"目标 {target_chat_id} 已存在于源 {source_chat_id} 的规则中")
+                
+                # 更新目标群组标题
+                if target_title:
+                    if "target_chat_titles" not in rule:
+                        rule["target_chat_titles"] = {}
+                    rule["target_chat_titles"][str(target_chat_id)] = target_title
+                
+                found = True
+                break
+        
+        if not found:
+            # 创建新规则
+            new_rule = {
+                "source_chat_id": source_chat_id,
+                "source_chat_title": source_title or str(source_chat_id),
+                "target_chat_ids": [target_chat_id],
+                "target_chat_titles": {str(target_chat_id): target_title} if target_title else {},
+                "keywords_blacklist": [],
+                "enabled": True
+            }
+            self.data["forwarding_rules"].append(new_rule)
+            logger.info(f"已创建新规则: 源 {source_chat_id} -> 目标 {target_chat_id}")
+        
+        self.save()
+    
+    def remove_rule(self, source_chat_id: int) -> bool:
+        """
+        删除源群组的转发规则
+        
+        Args:
+            source_chat_id: 源群组 ID
+        
+        Returns:
+            是否成功删除
+        """
+        # 先从磁盘重新加载，防止覆盖手动编辑
+        self.load()
+        
+        original_count = len(self.data.get("forwarding_rules", []))
+        self.data["forwarding_rules"] = [
+            rule for rule in self.data.get("forwarding_rules", [])
+            if rule["source_chat_id"] != source_chat_id
+        ]
+        
+        if len(self.data["forwarding_rules"]) < original_count:
+            self.save()
+            logger.info(f"已删除源 {source_chat_id} 的转发规则")
+            return True
+        
+        logger.warning(f"未找到源 {source_chat_id} 的转发规则")
+        return False

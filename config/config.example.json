@@ -5,7 +5,11 @@
   "forwarding_rules": [
     {
       "source_chat_id": -1001234567890,
+      "source_chat_title": "Source Channel Name",
       "target_chat_ids": [-1009876543210],
+      "target_chat_titles": {
+        "-1009876543210": "Target Channel Name"
+      },
       "keywords_blacklist": [],
       "enabled": true
     }
@@ -19,6 +23,14 @@
       "enabled": true,
       "notify_on_start": true,
       "notify_on_error": true
+    }
+  },
+  "dynamic_rules": {
+    "enabled": true,
+    "commands": {
+      "add": "/add <source_chat_id> <target_chat_id>",
+      "del": "/del <source_chat_id>",
+      "migrate": "/migrate <source_id> <target_id> <start_id> <end_id>"
     }
   }
 }
